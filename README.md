@@ -1,6 +1,6 @@
 # pytorch-pwc
 
-This is a refactored fork of [this implementation](https://github.com/sniklaus/pytorch-pwc) of PWC-Net. The code has been restructured.
+This is a refactored fork of [this implementation](https://github.com/sniklaus/pytorch-pwc) of PWC-Net. The code has been restructured to be easier to use and work on the latest versions of libraries.
 Works on PyTorch 1.0 and Python 3.7.
 
 ## Dependencies
