@@ -38,8 +38,9 @@ class FloWrita(multiprocessing.Process):
 
 class VideoDataset(Dataset):
 
-    def __init__(self, path):
+    def __init__(self, path, model):
         self.paths = sorted(path.glob('*.jpg'))
+        self.model = model
 
     def __len__(self):
         return len(self.paths) - 1
@@ -47,7 +48,8 @@ class VideoDataset(Dataset):
     @functools.lru_cache(maxsize=10)
     def get_frame(self, index):
         image = imageio.imread(self.paths[index])
-        return PWCNet.process_input(image_to_tensor(image).unsqueeze(0)).squeeze()
+        return self.model.process_input(
+            image_to_tensor(image).unsqueeze(0)).squeeze()
 
     def __getitem__(self, index):
         first = self.get_frame(index)
@@ -64,10 +66,10 @@ def main():
     parser.add_argument('--batch-size', default=16, type=int)
     args = parser.parse_args()
 
-    model = PWCNet().to(device)
-    model.load_state_dict(torch.load(args.checkpoint))
+    model = PWCNet(flow_shape=(255, 456)).to(device)
+    model.load_pretrained()
 
-    dataset = VideoDataset(args.in_path)
+    dataset = VideoDataset(args.in_path, model)
     loader = DataLoader(dataset,
                         shuffle=False,
                         batch_size=args.batch_size,
@@ -83,7 +85,8 @@ def main():
     tic = time.time()
     pbar = tqdm(loader)
     for batch_idx, (first, second) in enumerate(pbar):
-        flows = model.estimate_flow(first, second, out_shape=(256, 256)).cpu()
+        flows = model.estimate_flow(first, second, out_shape=(256, 256),
+                                    preprocessed=True).cpu()
 
         if args.out:
             queue.put_nowait((batch_idx, flows.numpy()))

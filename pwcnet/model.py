@@ -5,6 +5,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from pwcnet import utils
 from . import correlation
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -272,41 +273,18 @@ class Refiner(nn.Module):
         return self.moduleMain(x)
 
 
-class PWCNet(nn.Module):
-    INPUT_WIDTH = int(math.floor(math.ceil(455 / 64.0) * 64.0))
-    INPUT_HEIGHT = int(math.floor(math.ceil(256 / 64.0) * 64.0))
-    INPUT_SHAPE = (INPUT_HEIGHT, INPUT_WIDTH)
+class PWCNet(nn.Module, utils.PretrainedMixIn):
 
     @classmethod
-    def process_input(cls, image: torch.Tensor):
-        """
-        Convert image to BGR and resize to input shape.
-        """
-        image = image[:, [2, 1, 0], :, :]
-        image = F.interpolate(
-            input=image,
-            size=cls.INPUT_SHAPE,
-            mode='bilinear',
-            align_corners=False)
-        return image
+    def default_weights_name(cls):
+        return 'pwcnet-default.pth'
 
-    @classmethod
-    def _process_flow_output(cls, flow, shape):
-        """
-        Resize to original image dimensions.
-        """
-        height, width = shape
-        flow = 20.0 * F.interpolate(
-            input=flow.clone(),
-            size=(height, width), mode='bilinear', align_corners=False)
-        flow = flow.squeeze()
-
-        flow[0, :, :] *= float(width) / float(cls.INPUT_WIDTH)
-        flow[1, :, :] *= float(height) / float(cls.INPUT_HEIGHT)
-        return flow
-
-    def __init__(self):
+    def __init__(self, flow_shape=(436, 1024)):
         super(PWCNet, self).__init__()
+
+        self.flow_shape = (
+            int(math.floor(math.ceil(flow_shape[0] / 64.0) * 64.0)),
+            int(math.floor(math.ceil(flow_shape[1] / 64.0) * 64.0)))
 
         self.moduleExtractor = Extractor()
 
@@ -317,6 +295,32 @@ class PWCNet(nn.Module):
         self.moduleSix = Decoder(6)
 
         self.moduleRefiner = Refiner()
+
+    def process_input(self, image: torch.Tensor):
+        """
+        Convert image to BGR and resize to input shape.
+        """
+        image = image[:, [2, 1, 0], :, :]
+        image = F.interpolate(
+            input=image,
+            size=self.flow_shape,
+            mode='bilinear',
+            align_corners=False)
+        return image
+
+    def _process_flow_output(self, flow, shape):
+        """
+        Resize to original image dimensions.
+        """
+        height, width = shape
+        flow = 20.0 * F.interpolate(
+            input=flow.clone(),
+            size=(height, width), mode='bilinear', align_corners=False)
+        flow = flow.squeeze()
+
+        flow[0, :, :] *= float(width) / float(self.flow_shape[1])
+        flow[1, :, :] *= float(height) / float(self.flow_shape[0])
+        return flow
 
     def forward(self, first, second):
         first = self.moduleExtractor.forward(first)
@@ -330,12 +334,17 @@ class PWCNet(nn.Module):
 
         return x['tensorFlow'] + self.moduleRefiner.forward(x['tensorFeat'])
 
-    def estimate_flow(self, first, second, out_shape=None):
+    def estimate_flow(self, first, second, out_shape=None,
+                      preprocessed=False):
         self.eval()
 
         width = first[0].size(2)
         height = first[0].size(1)
         shape = out_shape if out_shape is not None else (height, width)
+
+        if not preprocessed:
+            first = self.process_input(first)
+            second = self.process_input(second)
 
         flow = self.forward(first.to(device), second.to(device))
         flow = flow.detach()

@@ -1,4 +1,5 @@
 import abc
+import os
 import typing
 from pathlib import Path
 
@@ -122,6 +123,7 @@ def image_to_tensor(image):
 
 
 class PretrainedMixIn(abc.ABC):
+    RESOURCE_DIR = Path(os.environ['HOME'], '.local1/share/pwcnet')
     WEIGHTS_NAME = ''
     WEIGHTS_ROOT = 'https://github.com/keunhong/pytorch-pwc'
 
@@ -154,7 +156,7 @@ class PretrainedMixIn(abc.ABC):
 
     @classmethod
     def default_weights_path(cls):
-        return Path(RESOURCE_DIR, cls.default_weights_name())
+        return Path(cls.RESOURCE_DIR, cls.default_weights_name())
 
     @classmethod
     def default_weights_url(cls):
