@@ -1,10 +1,11 @@
+import imageio
+
 import argparse
 import functools
 import multiprocessing
 import time
 from pathlib import Path
 
-import imageio
 import torch
 import visdom
 from torch.utils.data import Dataset, DataLoader
@@ -13,6 +14,7 @@ from tqdm import tqdm
 from pwcnet.model import PWCNet
 from pwcnet.utils import image_to_tensor, save_flow_as_png
 from pwcnet.visualize import flow_to_color
+import pims
 
 vis = visdom.Visdom(env='pwcnet')
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -43,7 +45,34 @@ class FloWrita(multiprocessing.Process):
 class VideoDataset(Dataset):
 
     def __init__(self, path, model):
-        self.paths = sorted(path.glob('*.jpg'))
+        if not path.exists():
+            raise FileNotFoundError(f"{path!s} does not exist")
+
+        self.reader = pims.PyAVReaderIndexed(str(path))
+        self.model = model
+
+    def __len__(self):
+        return len(self.reader) - 1
+
+    @functools.lru_cache(maxsize=10)
+    def get_frame(self, index):
+        image = self.reader.get_frame(index)
+        return self.model.process_input(
+            image_to_tensor(image).unsqueeze(0)).squeeze()
+
+    def __getitem__(self, index):
+        first = self.get_frame(index)
+        second = self.get_frame(index + 1)
+        return first, second
+
+
+class FrameDataset(Dataset):
+
+    def __init__(self, path, model):
+        if not path.exists():
+            raise FileNotFoundError(f"{path!s} does not exist")
+
+        self.paths = sorted(path.iterdir())
         self.model = model
 
     def __len__(self):
@@ -73,11 +102,17 @@ def main():
     model = PWCNet(flow_shape=(255, 456)).to(device)
     model.load_pretrained()
 
-    dataset = VideoDataset(args.in_path, model)
+    if args.in_path.is_dir():
+        print("Path is a frame directory.")
+        dataset = FrameDataset(args.in_path, model)
+    else:
+        print("Path is a video file.")
+        dataset = VideoDataset(args.in_path, model)
+
     loader = DataLoader(dataset,
                         shuffle=False,
                         batch_size=args.batch_size,
-                        num_workers=2)
+                        num_workers=1)
 
     if args.out:
         out_dir = args.out
@@ -113,7 +148,7 @@ def main():
 
     queue.close()
     queue.join_thread()
-    # writer.terminate()
+    writer.terminate()
 
 
 if __name__ == '__main__':
