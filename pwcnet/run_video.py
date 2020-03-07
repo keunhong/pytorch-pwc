@@ -94,7 +94,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--checkpoint', type=Path)
     parser.add_argument(dest='in_path', type=Path)
-    parser.add_argument('--out', type=Path)
+    parser.add_argument('--out-path', type=Path)
     parser.add_argument('--show', action='store_true')
     parser.add_argument('--batch-size', default=16, type=int)
     args = parser.parse_args()
@@ -114,10 +114,10 @@ def main():
                         batch_size=args.batch_size,
                         num_workers=1)
 
-    if args.out:
-        out_dir = args.out
+    if args.out_path:
+        out_dir = args.out_path
     else:
-        out_dir = args.in_path.parent / f'{args.in_path.stem}.flow'
+        out_dir = args.in_path.parent / args.in_path.stem / 'flow'
 
     if not out_dir.exists():
         out_dir.mkdir(parents=True)
